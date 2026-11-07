@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ugoku Studio</title>
+<meta name="robots" content="noindex">
+<link rel="icon" href="icon.png">
+<link rel="stylesheet" href="style.css">
+<style>
+.card{border:1px solid var(--line);border-radius:12px;padding:20px;margin:20px 0}
+.row{display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+.avatar{width:72px;height:72px;border-radius:50%;object-fit:cover;background:var(--line)}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:16px}
+.stat{text-align:center;border:1px solid var(--line);border-radius:8px;padding:8px 4px}
+.stat b{display:block;font-size:20px;font-variant-numeric:tabular-nums}
+.stat span{font-size:12px;color:var(--sub)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:12px}
+.v{font-size:12px;color:var(--sub)}
+.v img{width:100%;aspect-ratio:9/16;object-fit:cover;border-radius:8px;background:var(--line);display:block}
+.v .t{color:var(--ink);font-weight:600;margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+button.btn{border:0;cursor:pointer;font:inherit}
+.ghost{background:transparent;color:var(--sub);border:1px solid var(--line)!important}
+.msg{padding:10px 14px;border-radius:8px;background:var(--line);font-size:14px}
+input[type=file]{font:inherit;max-width:100%}
+@media (max-width:480px){.stats{grid-template-columns:repeat(2,1fr)}}
+</style>
+</head>
+<body>
+<main>
+<header><img src="icon.png" alt="ugoku"><a href="./">ugoku</a><span class="sub">Studio</span></header>
+<h1>ugoku Studio</h1>
+<p class="sub">運営者用の TikTok 連携ページ / Owner's TikTok tool</p>
+<div id="notice" class="msg" hidden></div>
+
+<section id="login" class="card" hidden>
+  <p>TikTok アカウントでログインすると、プロフィールと動画の数字を表示し、新しい動画を下書きとして送れます。</p>
+  <p class="sub">Log in with TikTok to view your profile and videos, and upload new videos as drafts.</p>
+  <a class="btn" href="http://localhost:8765/login">TikTok でログイン / Continue with TikTok</a>
+</section>
+
+<section id="me" class="card" hidden>
+  <div class="row">
+    <img id="avatar" class="avatar" alt="">
+    <div style="flex:1;min-width:0">
+      <div><b id="name"></b> <span id="verified" class="sub"></span></div>
+      <div id="bio" class="sub"></div>
+      <a id="profile" class="sub" href="#" rel="noopener">TikTok で開く / Open in TikTok</a>
+    </div>
+    <button id="logout" class="btn ghost">ログアウト / Log out</button>
+  </div>
+  <div class="stats">
+    <div class="stat"><b id="followers">–</b><span>フォロワー</span></div>
+    <div class="stat"><b id="following">–</b><span>フォロー中</span></div>
+    <div class="stat"><b id="likes">–</b><span>いいね</span></div>
+    <div class="stat"><b id="vcount">–</b><span>動画</span></div>
+  </div>
+</section>
+
+<section id="upload" class="card" hidden>
+  <h2 style="border:0;margin-top:0;padding:0">下書きを送る / Upload as draft</h2>
+  <p class="sub">選んだ動画は TikTok アプリの受信箱に届きます。キャプションを付けて公開するのはアプリ側です。</p>
+  <div class="row">
+    <input id="file" type="file" accept="video/mp4,video/quicktime">
+    <button id="send" class="btn">TikTok に送る / Send to TikTok</button>
+  </div>
+  <p id="upmsg" class="sub"></p>
+</section>
+
+<section id="videos" class="card" hidden>
+  <h2 style="border:0;margin-top:0;padding:0">動画 / Videos</h2>
+  <div id="grid" class="grid"></div>
+  <p><button id="more" class="btn ghost" hidden>もっと見る / Load more</button></p>
+</section>
+
+<footer><a href="privacy.html">Privacy Policy</a><a href="terms.html">Terms of Service</a></footer>
+</main>
+<script>
+const HELPER = 'http://localhost:8765';
+const $ = id => document.getElementById(id);
+const fmt = n => (n ?? 0).toLocaleString('ja-JP');
+let cursor = null;
+
+function notice(t) { $('notice').textContent = t; $('notice').hidden = !t; }
+
+async function call(path, opt) {
+  const r = await fetch(HELPER + path, opt);
+  return r.json();
+}
+
+async function init() {
+  const q = new URLSearchParams(location.search);
+  if (q.get('error')) notice('ログインに失敗しました（' + q.get('error') + '）。もう一度お試しください。');
+  if (q.get('login')) history.replaceState(null, '', location.pathname);
+  let st;
+  try { st = await call('/api/status'); }
+  catch (e) {
+    notice('手元の ugoku Studio（localhost:8765）が起動していません。python src/tiktok_studio.py を実行してください。');
+    return;
+  }
+  if (!st.logged_in) { $('login').hidden = false; return; }
+  await loadMe();
+  $('upload').hidden = false;
+  await loadVideos(true);
+}
+
+async function loadMe() {
+  const r = await call('/api/me');
+  const u = r.data && r.data.user;
+  if (!u) { notice('プロフィールを取得できませんでした: ' + JSON.stringify(r.error || r)); return; }
+  $('avatar').src = u.avatar_url || '';
+  $('name').textContent = u.display_name || '';
+  $('verified').textContent = u.is_verified ? '✓ verified' : '';
+  $('bio').textContent = u.bio_description || '';
+  $('profile').href = u.profile_deep_link || '#';
+  $('followers').textContent = fmt(u.follower_count);
+  $('following').textContent = fmt(u.following_count);
+  $('likes').textContent = fmt(u.likes_count);
+  $('vcount').textContent = fmt(u.video_count);
+  $('me').hidden = false;
+}
+
+async function loadVideos(reset) {
+  const r = await call('/api/videos' + (cursor && !reset ? '?cursor=' + cursor : ''));
+  const d = r.data;
+  if (!d) { notice('動画一覧を取得できませんでした: ' + JSON.stringify(r.error || r)); return; }
+  if (reset) $('grid').innerHTML = '';
+  for (const v of d.videos || []) {
+    const a = document.createElement('a');
+    a.className = 'v'; a.href = v.share_url; a.target = '_blank'; a.rel = 'noopener';
+    const img = document.createElement('img'); img.src = v.cover_image_url; img.alt = ''; img.loading = 'lazy';
+    const t = document.createElement('div'); t.className = 't'; t.textContent = v.title || v.video_description || v.id;
+    const m = document.createElement('div');
+    m.textContent = '▶ ' + fmt(v.view_count) + '  ♥ ' + fmt(v.like_count) + '  💬 ' + fmt(v.comment_count);
+    a.append(img, t, m); $('grid').append(a);
+  }
+  cursor = d.cursor; $('more').hidden = !d.has_more;
+  $('videos').hidden = false;
+}
+
+$('more').onclick = () => loadVideos(false);
+
+$('logout').onclick = async () => {
+  await call('/api/logout', { method: 'POST' });
+  location.reload();
+};
+
+$('send').onclick = async () => {
+  const f = $('file').files[0];
+  if (!f) { $('upmsg').textContent = '動画ファイルを選んでください。'; return; }
+  $('send').disabled = true;
+  $('upmsg').textContent = '送信中… ' + (f.size / 1048576).toFixed(1) + 'MB';
+  try {
+    const r = await call('/api/upload', {
+      method: 'POST', body: f,
+      headers: { 'Content-Type': 'application/octet-stream', 'X-Filename': encodeURIComponent(f.name) }
+    });
+    const s = r.status && r.status.status;
+    if (s === 'SEND_TO_USER_INBOX' || s === 'PUBLISH_COMPLETE')
+      $('upmsg').textContent = '✅ TikTok の受信箱に届きました。アプリの通知から編集して投稿してください。';
+    else if (r.publish_id)
+      $('upmsg').textContent = '送信しました（処理中: ' + (s || '確認中') + '）。少し待ってから TikTok アプリの受信箱を確認してください。';
+    else
+      $('upmsg').textContent = '送信できませんでした: ' + JSON.stringify(r.error || r);
+  } catch (e) {
+    $('upmsg').textContent = '送信できませんでした: ' + e;
+  }
+  $('send').disabled = false;
+};
+
+init();
+</script>
+</body>
+</html>
