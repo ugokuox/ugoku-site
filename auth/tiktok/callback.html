@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TikTok Login｜ugoku</title>
+<link rel="icon" href="../../icon.png">
+<link rel="stylesheet" href="../../style.css">
+</head>
+<body>
+<main>
+<header><img src="../../icon.png" alt="ugoku"><a href="../../">ugoku</a></header>
+<h1>TikTok ログイン</h1>
+<p id="msg" class="sub">処理中… / Processing…</p>
+<script>
+// TikTok から戻ってきた code を、運営者 PC 上の ugoku 管理ツール（localhost）へ引き渡す。
+// The authorization code is handed to the owner's local ugoku tool; nothing is stored in the browser.
+(function () {
+  var q = new URLSearchParams(location.search);
+  var msg = document.getElementById('msg');
+  if (q.get('error')) {
+    msg.textContent = 'ログインがキャンセルされました / Login was cancelled: ' + q.get('error');
+    return;
+  }
+  if (!q.get('code')) {
+    msg.textContent = 'このページは TikTok ログインの戻り先です。 / This is the TikTok login callback page.';
+    return;
+  }
+  location.replace('http://localhost:8765/callback' + location.search);
+})();
+</script>
+<footer><a href="../../privacy.html">Privacy Policy</a><a href="../../terms.html">Terms of Service</a></footer>
+</main>
+</body>
+</html>
